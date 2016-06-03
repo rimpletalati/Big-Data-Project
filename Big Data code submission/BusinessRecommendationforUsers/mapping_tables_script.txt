@@ -1,0 +1,45 @@
+
+// mapping for business_id
+
+CREATE TABLE hbase_table_business4(business_id string,name string) 
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES ("hbase.columns.mapping" = ":key,cf1:name")
+TBLPROPERTIES ("hbase.table.name" = "business4");
+
+DROP TABLE IF EXISTS staging;
+CREATE TABLE staging (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/yelp_academic_dataset_business.json' INTO TABLE staging;
+
+INSERT OVERWRITE TABLE hbase_table_business4 SELECT
+  get_json_object(json, '$.business_id') AS business_id,
+  get_json_object(json, '$.name') AS name
+ FROM staging;
+
+
+RData = LOAD 'hbase://business4' USING org.apache.pig.backend.hadoop.hbase.HBaseStorage('cf1:name','-loadKey true') AS (business_id:chararray,name:chararray);
+
+STORE RData INTO 'output.txt';
+
+hadoop dfs -get output.txt /home/hadoop
+
+// mapping for user_id
+
+CREATE TABLE hbase_table_user(user_id string, name string) 
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES ("hbase.columns.mapping" = ":key,cf1:name")
+TBLPROPERTIES ("hbase.table.name" = "user");
+
+
+DROP TABLE IF EXISTS staging;
+CREATE TABLE staging (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/yelp_academic_dataset_user.json' INTO TABLE staging;
+
+
+INSERT OVERWRITE TABLE hbase_table_user SELECT
+  get_json_object(json, '$.user_id') AS user_id,
+  get_json_object(json, '$.name') AS name
+FROM staging;
+
+UData = LOAD 'hbase://user' USING org.apache.pig.backend.hadoop.hbase.HBaseStorage('cf1:name','-loadKey true') AS (user_id:chararray,name:chararray);
+
+FData= DISTINCT(FOREACH UData GENERATE $0);

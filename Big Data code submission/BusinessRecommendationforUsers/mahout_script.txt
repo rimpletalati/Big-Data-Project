@@ -1,0 +1,53 @@
+
+// creating staging table for business mapping and loading data
+DROP TABLE IF EXISTS businessstaging;
+CREATE TABLE businessstaging (id int, name string)row format delimited fields terminated by ',';
+LOAD DATA LOCAL INPATH '/home/hadoop/business_mapping.csv' INTO TABLE businessstaging;
+
+
+// creating staging table for user mapping and loading data
+DROP TABLE IF EXISTS userstaging;
+CREATE TABLE userstaging(id int, name string)row format delimited fields terminated by ',';
+LOAD DATA LOCAL INPATH '/home/hadoop/usermapping.csv' INTO TABLE userstaging;
+
+//creating staging table for reviewjson file
+DROP TABLE IF EXISTS staging;
+CREATE TABLE staging (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/yelp_academic_dataset_review.json' INTO TABLE staging;
+
+
+DROP TABLE IF EXISTS reviewstaging;
+CREATE TABLE reviewstaging (business_id string, user_id string, stars int);
+
+INSERT OVERWRITE TABLE reviewstaging SELECT
+  get_json_object(json, '$.business_id') AS business_id,
+  get_json_object(json, '$.user_id') AS user_id,
+  get_json_object(json, '$.stars') AS stars
+FROM staging;
+
+// create folder
+cd mkdir hiveout
+chmod 777 /hiveout
+ 
+// create another folder in hiveout
+cd mkdir input
+chmod 777 /hiveout/input
+
+insert overwrite local directory '/hiveout/input/'
+row format delimited fields terminated by ','
+SELECT s2.id, s1.id, s3.stars
+FROM reviewstaging s3, userstaging s2, businessstaging s1 
+where (s3.business_id = s1.name) and (s3.user_id = s2.name);
+
+// above command will generate a 000000_0csv file in /hiveout/input folder
+
+
+// put above generated csv file in hadoop file system.
+hadoop dfs -put /hiveout/input/000000_0 /000000_0
+
+// running mahout job
+mahout recommenditembased -s SIMILARITY_COOCCURRENCE -i /input.csv -o /mahoutOutput --booleanData true
+
+// getting output folder from hadoop file system to EMR instance system.
+hadoop dfs -get /mahoutOutput /home/hadoop
+

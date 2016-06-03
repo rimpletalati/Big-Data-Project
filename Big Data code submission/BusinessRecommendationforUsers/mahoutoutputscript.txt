@@ -1,0 +1,75 @@
+// mahout output
+
+DROP TABLE IF EXISTS businessstaging;
+CREATE TABLE businessstaging (id int, name string)row format delimited fields terminated by ',';
+LOAD DATA LOCAL INPATH '/home/hadoop/business_mapping.csv' INTO TABLE businessstaging;
+
+
+// creating staging table for user mapping and loading data
+DROP TABLE IF EXISTS userstaging;
+CREATE TABLE userstaging(id int, name string)row format delimited fields terminated by ',';
+LOAD DATA LOCAL INPATH '/home/hadoop/usermapping.csv' INTO TABLE userstaging;
+
+
+DROP TABLE IF EXISTS inputstaging;
+CREATE TABLE inputstaging(uid int, bid int, count int)row format delimited fields terminated by ',';
+LOAD DATA LOCAL INPATH '/home/hadoop/mahoutput.csv' INTO TABLE inputstaging;
+
+
+// create folder
+cd mkdir hiveout
+chmod 777 /hiveout
+ 
+// create another folder in hiveout
+cd mkdir input
+chmod 777 /hiveout/input
+
+
+insert overwrite local directory '/hiveout/input/'
+row format delimited fields terminated by ','
+SELECT s2.name,s3.name,s1.count
+FROM userstaging s2 JOIN inputstaging s1 ON(s2.id = s1.uid)  JOIN businessstaging s3 ON(s3.id=s1.bid);
+
+// final mahout mapping
+
+DROP TABLE IF EXISTS staging;
+CREATE TABLE staging (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/yelp_academic_dataset_business.json' INTO TABLE staging;
+
+DROP TABLE IF EXISTS staging1;
+CREATE TABLE staging1 (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/yelp_academic_dataset_user.json' INTO TABLE staging1;
+
+CREATE TABLE business(business_id string, name string)row format delimited fields terminated by ',';
+
+INSERT OVERWRITE TABLE business SELECT
+  get_json_object(json, '$.business_id') AS business_id,
+  get_json_object(json, '$.name') AS name
+FROM staging;
+
+CREATE TABLE users(user_id string, name string)row format delimited fields terminated by ',';
+
+INSERT OVERWRITE TABLE users SELECT
+  get_json_object(json, '$.user_id') AS user_id,
+  get_json_object(json, '$.name') AS name
+FROM staging1;
+
+
+DROP TABLE IF EXISTS mahoutstaging;
+CREATE TABLE mahoutstaging(uid string,bid string, count int)row format delimited fields terminated by ',';
+LOAD DATA LOCAL INPATH '/home/hadoop/disk1.csv' INTO TABLE mahoutstaging;
+LOAD DATA LOCAL INPATH '/home/hadoop/disk2.csv' INTO TABLE mahoutstaging;
+LOAD DATA LOCAL INPATH '/home/hadoop/disk3.csv' INTO TABLE mahoutstaging;
+LOAD DATA LOCAL INPATH '/home/hadoop/disk4.csv' INTO TABLE mahoutstaging;
+LOAD DATA LOCAL INPATH '/home/hadoop/disk5.csv' INTO TABLE mahoutstaging;
+
+
+
+insert overwrite local directory '/hiveout/input/'
+row format delimited fields terminated by ','
+Select u1.name , b1.name, s3. count
+FROM users u1 join mahoutstaging s3 ON(u1.user_id = s3.uid) JOIN business b1 ON(b1.business_id = s3.bid);
+
+
+
+

@@ -1,0 +1,90 @@
+// business with max checkin counts for morning,afternon, evening for each city with latitude and longitude information 
+
+// need 2 tables
+business
+(business_id,name,city, state,latitude,longitude,categories)
+
+checkin
+(business_id, checkin)
+
+//creating staging table for businessjson file
+DROP TABLE IF EXISTS staging;
+CREATE TABLE staging (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/yelp_academic_dataset_business.json' INTO TABLE staging;
+
+//creating staging table for checkinjson file
+DROP TABLE IF EXISTS staging1;
+CREATE TABLE staging1 (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/checkin.json' INTO TABLE staging1;
+
+
+DROP TABLE IF EXISTS businessstaging;
+CREATE TABLE businessstaging (id string,city string,state string, latitude double, longitude double, name string,categories string);
+
+INSERT OVERWRITE TABLE businessstaging SELECT
+  get_json_object(json, '$.business_id') AS id,
+  get_json_object(json, '$.city') AS city,
+  get_json_object(json, '$.state') AS state,
+  get_json_object(json, '$.latitude') AS latitude,
+  get_json_object(json, '$.longitude') AS longitude,
+  get_json_object(json, '$.categories') AS categories,
+  get_json_object(json, '$.name') AS name
+FROM staging;
+
+
+
+DROP TABLE IF EXISTS checkinstaging;
+CREATE TABLE checkinstaging (id string, mm int, ma int, me int, tm int, ta int,te int,wm int,wa int, we int, thm int, tha int, the int,fm int, fa int, fe int,sm int, sa int, se int, sum int, sua int , sue int)row format delimited fields terminated by ',';
+
+INSERT OVERWRITE TABLE checkinstaging SELECT
+  get_json_object(json, '$.business_id') AS id,
+  get_json_object(json, '$.checkinInfo.mm') AS mm,
+  get_json_object(json, '$.checkinInfo.ma') AS ma,
+  get_json_object(json, '$.checkinInfo.me') AS me,
+  get_json_object(json, '$.checkinInfo.tm') AS tm,
+  get_json_object(json, '$.checkinInfo.ta') AS ta,
+  get_json_object(json, '$.checkinInfo.te') AS te,
+  get_json_object(json, '$.checkinInfo.wm') AS wm,
+  get_json_object(json, '$.checkinInfo.wa') AS wa,
+  get_json_object(json, '$.checkinInfo.we') AS we,
+  get_json_object(json, '$.checkinInfo.thm') AS thm,
+  get_json_object(json, '$.checkinInfo.tha') AS tha,
+  get_json_object(json, '$.checkinInfo.the') AS the,
+  get_json_object(json, '$.checkinInfo.fm') AS fm,
+  get_json_object(json, '$.checkinInfo.fa') AS fa,
+  get_json_object(json, '$.checkinInfo.fe') AS fe,
+  get_json_object(json, '$.checkinInfo.sm') AS sm,
+  get_json_object(json, '$.checkinInfo.sa') AS sa,
+  get_json_object(json, '$.checkinInfo.se') AS se,
+  get_json_object(json, '$.checkinInfo.sum') AS sum,
+  get_json_object(json, '$.checkinInfo.sua') AS sua,
+  get_json_object(json, '$.checkinInfo.sue') AS sue
+FROM staging1;
+
+
+// create folder
+cd mkdir hiveout
+chmod 777 /hiveout
+ 
+// create another folder in hiveout
+cd mkdir input
+chmod 777 /hiveout/input
+
+
+insert overwrite local directory '/hiveout/input/'
+row format delimited fields terminated by ','
+SELECT s1.name as name,s1.city as city,s1.latitude as latitude,s1.longitude as longitude,Sum(s2.mm+s2.tm+s2.wm+s2.thm+s2.fm+s2.sm+s2.sum) as morning_count,
+Sum(s2.ma+s2.ta+s2.wa+s2.tha+s2.fa+s2.sa+s2.sua) as afternoon_count,
+Sum(s2.me+s2.te+s2.we+s2.the+s2.fe+s2.se+s2.sue) as evening_count
+FROM businessstaging s1, checkinstaging s2
+where (s1.id = s2.id) 
+Group By s1.name,s1.city,s1.latitude,s1.longitude;
+
+
+
+
+
+
+
+
+

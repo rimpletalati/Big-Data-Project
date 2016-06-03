@@ -1,0 +1,101 @@
+
+
+//review Table
+// hive 
+
+CREATE TABLE hbase_table_review(business_id string, review string) 
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES ("hbase.columns.mapping" = ":key,cf1:review")
+TBLPROPERTIES ("hbase.table.name" = "review");
+
+
+DROP TABLE IF EXISTS staging;
+CREATE TABLE staging (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/yelp_academic_dataset_review.json' INTO TABLE staging
+
+
+INSERT OVERWRITE TABLE hbase_table_review SELECT
+  get_json_object(json, '$.business_id') AS business_id,
+  get_json_object(json, '$.text') AS review
+FROM staging;
+
+//For Dictionary
+
+CREATE TABLE hbase_table_dic(Word string, Polarity string) 
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES ("hbase.columns.mapping" = ":key,cf1:Polarity")
+TBLPROPERTIES ("hbase.table.name" = "dic");
+
+create table testdic(Word string, Polarity string) row format delimited fields terminated by '\t';
+
+load data local inpath '/home/hadoop/dictionary.tsv' into table testdic;
+
+insert overwrite table hbase_table_dic select * from testdic;
+
+
+// business Table
+
+CREATE TABLE hbase_table_business(business_id string, name string) 
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES ("hbase.columns.mapping" = ":key,cf1:name")
+TBLPROPERTIES ("hbase.table.name" = "business");
+
+
+DROP TABLE IF EXISTS staging;
+CREATE TABLE staging (json STRING);
+LOAD DATA LOCAL INPATH '/home/hadoop/yelp_academic_dataset_business.json' INTO TABLE staging
+
+
+INSERT OVERWRITE TABLE hbase_table_business SELECT
+  get_json_object(json, '$.business_id') AS business_id,
+  get_json_object(json, '$.name') AS name
+FROM staging;
+
+
+
+
+
+
+//Pig Sript
+//getData from Hbase
+words = LOAD 'hbase://review' USING org.apache.pig.backend.hadoop.hbase.HBaseStorage('cf1:review','-loadKey true') AS (business_id:chararray, review:chararray);
+
+//load the dictionary file
+dictionary = LOAD 'hbase://dic' USING org.apache.pig.backend.hadoop.hbase.HBaseStorage('cf1:Polarity','-loadKey true') AS (Word:chararray, polarity:chararray);
+
+// load data from business table
+BData = LOAD 'hbase://business' USING org.apache.pig.backend.hadoop.hbase.HBaseStorage('cf1:name','-loadKey true') AS (business_id:chararray,name:chararray);
+
+//tokenize the text to get words and flatten to get single word in a row
+Rwords = foreach words generate business_id, FLATTEN( TOKENIZE(review) ) AS value;
+
+//by join we will check words in Rwords and dictionary
+Rsentiment = join Rwords by value left outer, dictionary by Word using 'replicated';
+
+//Classify each word as either positive or negative word
+//getting business_id and their score
+wscore = foreach Rsentiment generate Rwords::business_id as business_id, (CASE dictionary::polarity WHEN 'positive' THEN 1 WHEN 'negative' THEN -1 else 0 END) as score;
+
+//group business_id
+Rgroup = group wscore by business_id;
+
+// Sum the sentiments scores for each business_id
+Rscore = foreach Rgroup generate group as id, SUM(wscore.score)  as final;
+
+//join with business table to get business name
+JData = join Rscore by id left outer, BData by business_id;
+
+FData= foreach JData generate $3,$1;
+
+//dump output to screen
+dump FData;
+
+//store output in text file
+Store FData INTO 'sentimentalOutput';
+
+//copy output file from file system to EMR instance
+ hadoop dfs -get sentimentalOutput /home/hadoop
+
+ //it will create directory...
+ then use cd Output.txt and open the file.
+
